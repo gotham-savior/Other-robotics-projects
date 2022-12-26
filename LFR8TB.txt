@@ -1,0 +1,241 @@
+/*
+ * LFR_1.c
+ *
+ * Created: 05-10-2014 00:42:25
+ *  Author: Harsha
+ */ 
+
+
+#include <avr/io.h>
+#include <util/delay.h>
+#include <stdbool.h>
+
+
+#define sbi(x,y) x|=_BV(y)// set bit
+#define cbi(x,y) x&=~(_BV(y))// clear bit
+#define black true
+#define white false
+#define F_CPU 1000000
+
+void calcerror();
+void initports(void);
+void leftmf(void);						//left motor forward
+void leftmb(void);						//left motor backward
+void leftms(void);						//left motor stop
+void rightmb(void);						//right motor backward
+void rightms(void);						//right motor stop
+void rightmf(void);
+void initpwm(void);					//left motor forward
+
+
+bool pause = true;
+char lastreading = 'r';
+int leftpulse, rightpulse,s1, s2, s3, s4, s5, s6, s7, s8, maxspeed = 255;
+float error = 0, perror = 0;
+unsigned short int menu = 0;
+unsigned short int basespeed = 245, Kp = 10 , Ki = 0,Kd = 1;
+
+float P, I, D, correction;
+
+
+
+int main (void)
+{
+
+	initports();
+	initpwm();
+
+	while(1)
+	{
+
+		calcerror();
+		if((s1+s2+s3+s4+s5+s6+s7+s8) == 0)
+		{
+			if(lastreading == 'r')
+			{
+				rightmb();						//turn right at full speed
+				leftmf();
+				OCR1A = 255;
+				OCR1B = 255;
+			}
+			
+			else if(lastreading == 'l')
+			{
+				rightmf();						//turn left at full speed
+
+				leftmb();
+				OCR1A = 255;
+				OCR1B = 255;
+			}
+		}
+		
+		
+		else  									//robot on line
+		{
+			P = error * Kp;
+			
+			I +=error;
+			I = I * Ki;
+			
+			D = error - perror;
+			
+			D= (Kd * D);
+			correction = P + I + D;
+
+			if(P==0)
+			{
+
+				rightmf();						//turn right at full speed
+				leftmf();
+				OCR1A=255;
+				OCR1B=255;
+			}
+			else
+
+			{
+				rightpulse =  basespeed - correction;
+				leftpulse = basespeed + correction;
+				
+				leftmf();
+				rightmf();
+				
+				
+				if(leftpulse > 255)
+				leftpulse = 255;
+				
+				if(rightpulse > 255)
+				rightpulse = 255;
+				
+				
+				if(leftpulse <= 10)
+				leftpulse = 10;
+				
+				if(rightpulse <= 10)
+				rightpulse = 10;
+				
+
+
+				OCR1A = leftpulse;
+				OCR1B = rightpulse;
+			}
+
+		}
+	}
+}
+
+void calcerror()								//calculates the current error
+{
+	s1 = 0;
+	s2 = 0;
+	s3 = 0;
+	s4 = 0;
+	s5 = 0;
+	s6 = 0;
+	s7 = 0;
+	s8 = 0;
+	
+	if(bit_is_set(PINA, PA7))
+	{
+		lastreading = 'r';
+		s1 = 1;
+	}
+	if(bit_is_set(PINA, PA6))
+	s2 = 1;
+	if(bit_is_set(PINA, PA5))
+	s3 = 1;
+	if(bit_is_set(PINA, PA4))
+	s4 = 1;
+	if(bit_is_set(PINA, PA3))
+	s5 = 1;
+	if(bit_is_set(PINA, PA2))
+	s6 = 1;
+	if(bit_is_set(PINA, PA1))
+	s7 = 1;
+	if(bit_is_set(PINA, PA0))
+	{
+		lastreading = 'l';
+		s8 = 1;
+	}
+	
+	perror = error;
+	
+	//the following statements calculate the error
+	
+	error = (s1 * 1) + (s2 * 2) + (s3 * 3) + (s4 * 4) + (s5 * 5) + (s6 * 6) +(s7 * 7) + (s8*8);
+	error = (error)/(s1+s2+s3+s4+s5+s6+s7+s8);
+	error = error - 4.5;
+}
+
+void initports(void) 						//initialize the pins
+{
+	
+	//initializes the pins connected to motor driver as output
+	sbi(DDRD, PD5);
+	sbi(DDRC, PC2);
+	sbi(DDRC, PC3);
+	sbi(DDRD, PD4);
+	sbi(DDRC, PC0);
+	sbi(DDRC, PC1);
+	cbi(PORTD, PD5);
+	cbi(PORTC, PC2);
+	cbi(PORTC, PC3);
+	cbi(PORTD, PD4);
+	cbi(PORTC, PC0);
+	cbi(PORTC, PC1);
+	
+	//initiallizes the motor enable pins as output
+	sbi(PORTD, PD4);
+	sbi(PORTD, PD5);
+	
+	DDRA = 0;    								//sets the port connected to sensors as input
+	PORTA = 0;   								//enable pull up
+}
+
+void leftmb(void)
+{
+	sbi(PORTD, PD4);
+	cbi(PORTC, PC0);
+	sbi(PORTC, PC1);
+}
+
+void rightmf(void)
+{
+	sbi(PORTD, PD5);
+	cbi(PORTC, PC2);
+	sbi(PORTC, PC3);
+}
+void leftmf(void)
+{
+	sbi(PORTD, PD4);
+	sbi(PORTC, PC0);
+	cbi(PORTC, PC1);
+}
+
+void rightmb(void)
+{
+	sbi(PORTD, PD5);
+	sbi(PORTC, PC2);
+	cbi(PORTC, PC3);
+}
+void leftms(void)
+{
+	cbi(PORTD, PD4);
+	cbi(PORTC, PC0);
+	cbi(PORTC, PC1);
+}
+
+void rightms(void)
+{
+	cbi(PORTD, PD5);
+	cbi(PORTC, PC2);
+	cbi(PORTC, PC3);
+}
+
+void initpwm(void)								//initialize PWM
+{
+	TCCR1A = _BV(WGM10)   					    // 8 bit fast PWM
+	| _BV(COM1A1)  						// set OC1A/B on compare match
+	| _BV(COM1B1);
+	TCCR1B = _BV(CS11)  	   				   // 1/8 prescale fast PWM
+	| _BV(WGM12) ;
+}
